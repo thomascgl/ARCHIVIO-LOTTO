@@ -13,13 +13,14 @@ RUOTE_MAP = {
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
 }
 
 def scarica_da_adm():
+    """ Tenta lo scraping dal sito ufficiale ADM """
     url = "https://www.adm.gov.it/portale/monopoli/giochi/gioco-del-lotto/lotto_g"
     try:
-        res = requests.get(url, headers=HEADERS, timeout=15)
+        res = requests.get(url, headers=HEADERS, timeout=10)
         if res.status_code != 200:
             return None
             
@@ -44,17 +45,53 @@ def scarica_da_adm():
                     })
                     
         if len(ruote_list) >= 10:
+            print("Dati recuperati con successo da ADM!")
             return {"Data": data_estrazione, "Ruote": ruote_list}
     except Exception as e:
         print(f"Errore ADM: {e}")
     return None
 
+def scarica_da_gazzettalotto():
+    """ Fonte secondaria se ADM blocca il server di GitHub """
+    url = "https://www.gazzettadellotto.it/"
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        if res.status_code != 200:
+            return None
+            
+        soup = BeautifulSoup(res.text, "html.parser")
+        # Parsing della tabella della Gazzetta del Lotto
+        data_tag = soup.find(string=re.compile(r"\d{2}/\d{2}/\d{4}"))
+        if not data_tag:
+            return None
+            
+        match = re.search(r"\d{2}/\d{2}/\d{4}", data_tag)
+        data_estrazione = match.group(0) if match else None
+        
+        ruote_list = []
+        rows = soup.find_all("tr")
+        for row in rows:
+            cols = [td.get_text().strip() for td in row.find_all(["td", "th"])]
+            if len(cols) >= 6:
+                nome_r = cols[0].upper()
+                if nome_r in RUOTE_MAP:
+                    ruote_list.append({
+                        "Ruota": RUOTE_MAP[nome_r],
+                        "N1": cols[1], "N2": cols[2], "N3": cols[3], "N4": cols[4], "N5": cols[5]
+                    })
+        if len(ruote_list) >= 10:
+            print("Dati recuperati con successo dalla Fonte Alternativa!")
+            return {"Data": data_estrazione, "Ruote": ruote_list}
+    except Exception as e:
+        print(f"Errore Fonte Alternativa: {e}")
+    return None
+
 def aggiorna_json():
-    # Prova il recupero dati
-    nuova_estrazione = scarica_da_adm()
+    # Prova prima ADM, se fallisce passa alla seconda fonte
+    nuova_estrazione = scarica_da_adm() or scarica_da_gazzettalotto()
     
     if not nuova_estrazione:
-        print("ATTENZIONE: Impossibile recuperare la nuova estrazione. Nessun aggiornamento effettuato.")
+        print("CRITICO: Impossibile scaricare i dati da nessuna fonte.")
         return
 
     try:
@@ -66,12 +103,12 @@ def aggiorna_json():
     if archivio:
         ultima_data_salvata = archivio[-1]["Data"]
         if nuova_estrazione["Data"] == ultima_data_salvata:
-            print(f"Archivio già aggiornato alla data del {nuova_estrazione['Data']}.")
+            print(f"Archivio già aggiornato. Nessuna nuova estrazione disponibile ({nuova_estrazione['Data']}).")
             return
     else:
         ultima_data_salvata = ""
 
-    # Calcolo progressivo numero estrazione annuo
+    # Conteggio progressivo annuo del numero di estrazione
     anno_nuovo = datetime.strptime(nuova_estrazione["Data"], "%d/%m/%Y").year
     anno_ultimo = datetime.strptime(ultima_data_salvata, "%d/%m/%Y").year if ultima_data_salvata else 0
 
@@ -88,7 +125,7 @@ def aggiorna_json():
     with open("estrazioni.json", "w", encoding="utf-8") as f:
         json.dump(archivio, f, indent=2, ensure_ascii=False)
 
-    print(f"OK: Aggiunta estrazione del {nuova_estrazione['Data']} n.{numero_estrazione}")
+    print(f"COMPLETATO: Aggiunta estrazione del {nuova_estrazione['Data']} (N. {numero_estrazione})")
 
 if __name__ == "__main__":
     aggiorna_json()
