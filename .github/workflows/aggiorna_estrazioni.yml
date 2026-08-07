@@ -2,13 +2,12 @@ name: Aggiornamento Automatico Estrazioni
 
 on:
   schedule:
-    # Esegue nei giorni di estrazione (Martedì, Giovedì, Venerdì, Sabato) alle 20:30 UTC
-    - cron: '30 20 * * 2,4,5,6'
+    # Esegue TUTTI I GIORNI (* * *) alle 20:45 UTC (circa le 22:45 italiane in estate / 21:45 in inverno)
+    - cron: '45 20 * * *'
   
-  # Permette l'avvio manuale
+  # Ti permette di avviare l'aggiornamento a mano quando vuoi dalla scheda "Actions" di GitHub
   workflow_dispatch:
 
-# Autorizza le GitHub Actions a scrivere nel repository (risolve l'exit code 128)
 permissions:
   contents: write
 
@@ -17,11 +16,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Aggiornato a v4 (risolve l'avviso Node.js)
     - name: Scarica il codice del repository
       uses: actions/checkout@v4
 
-    # Aggiornato a v5 (risolve l'avviso Node.js)
     - name: Prepara Python
       uses: actions/setup-python@v5
       with:
@@ -40,5 +37,5 @@ jobs:
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
         git add estrazioni.json
-        git diff-index --quiet HEAD || git commit -m "Auto-update estrazioni Lotto [ADM]"
+        git diff-index --quiet HEAD || git commit -m "Auto-update estrazioni Lotto"
         git push
