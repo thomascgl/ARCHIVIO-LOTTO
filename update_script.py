@@ -14,7 +14,6 @@ RUOTE_MAP = {
 def scarica_da_estrazionedellotto():
     url = "https://www.estrazionedellotto.it/"
     
-    # Crea uno scraper capace di aggirare le protezioni anti-bot
     scraper = cloudscraper.create_scraper(
         browser={
             'browser': 'chrome',
@@ -30,38 +29,73 @@ def scarica_da_estrazionedellotto():
             return None
             
         soup = BeautifulSoup(response.text, "html.parser")
-        text = soup.get_text()
         
-        # Cerca la data nel formato gg/mm/aaaa (es. 07/08/2026)
-        match = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-        if not match:
-            print("Data dell'estrazione non trovata.")
+        # 1. Estrazione della Data dal <p class="drawTitle"><strong>
+        draw_title = soup.find("p", class_="drawTitle")
+        data_estrazione = None
+        
+        if draw_title:
+            strong_tag = draw_title.find("strong")
+            if strong_tag:
+                txt_data = strong_tag.get_text()
+                # Cerca la data o la converte dal formato "Venerdì 7 agosto 2026"
+                match = re.search(r"(\d{1,2}\s+[a-zA-Zàèéìòù]+\s+\d{4})", txt_data)
+                if match:
+                    # Mappatura mesi in italiano
+                    mesi = {
+                        "gennaio": "01", "febbraio": "02", "marzo": "03", "aprile": "04",
+                        "maggio": "05", "giugno": "06", "luglio": "07", "agosto": "08",
+                        "settembre": "09", "ottobre": "10", "novembere": "11", "dicembre": "12"
+                    }
+                    parti = match.group(1).lower().split()
+                    giorno = parti[0].zfill(2)
+                    mese = mesi.get(parti[1], "01")
+                    anno = parti[2]
+                    data_estrazione = f"{giorno}/{mese}/{anno}"
+
+        # Backup se la conversione testo non trova la data in formato esteso
+        if not data_estrazione:
+            match_numeric = re.search(r"(\d{2}/\d{2}/\d{4})", soup.get_text())
+            if match_numeric:
+                data_estrazione = match_numeric.group(1)
+
+        if not data_estrazione:
+            print("Data dell'estrazione non trovata nell'HTML.")
             return None
-            
-        data_estrazione = match.group(1)
+
+        # 2. Estrazione delle ruote da <ul class="ballRow">
         ruote_list = []
+        ball_rows = soup.find_all("ul", class_="ballRow")
         
-        # Cerca le righe delle tabelle contenenti i numeri
-        for tr in soup.find_all("tr"):
-            cols = [td.get_text().strip() for td in tr.find_all(["td", "th"])]
-            if len(cols) >= 6:
-                nome_r = cols[0].upper()
-                if nome_r in RUOTE_MAP:
-                    ruote_list.append({
-                        "Ruota": RUOTE_MAP[nome_r],
-                        "N1": cols[1],
-                        "N2": cols[2],
-                        "N3": cols[3],
-                        "N4": cols[4],
-                        "N5": cols[5]
-                    })
-                    
+        for ul in ball_rows:
+            elementi = [li.get_text().strip() for li in ul.find_all(["li", "span"])]
+            
+            # Pulisce gli elementi vuoti
+            elementi = [e for e in elementi if e]
+            
+            if len(elementi) >= 6:
+                nome_r = elementi[0].upper()
+                # Estrae i 5 numeri
+                numeri = [e for e in elementi[1:] if e.isdigit()]
+                
+                for chiave in RUOTE_MAP:
+                    if chiave in nome_r and len(numeri) >= 5:
+                        ruote_list.append({
+                            "Ruota": RUOTE_MAP[chiave],
+                            "N1": numeri[0],
+                            "N2": numeri[1],
+                            "N3": numeri[2],
+                            "N4": numeri[3],
+                            "N5": numeri[4]
+                        })
+                        break
+
         if len(ruote_list) >= 10:
             print(f"Estratti recuperati con successo per la data {data_estrazione}")
             return {"Data": data_estrazione, "Ruote": ruote_list}
         else:
             print(f"Trovate solo {len(ruote_list)} ruote su 11.")
-            
+
     except Exception as e:
         print(f"Errore durante lo scraping: {e}")
         
