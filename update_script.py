@@ -1,8 +1,9 @@
 import json
-import requests
+import re
 from datetime import datetime
+import cloudscraper
+from bs4 import BeautifulSoup
 
-# Mappatura dei nomi delle ruote
 RUOTE_MAP = {
     "BARI": "Bari", "CAGLIARI": "Cagliari", "FIRENZE": "Firenze", 
     "GENOVA": "Genova", "MILANO": "Milano", "NAPOLI": "Napoli", 
@@ -10,89 +11,67 @@ RUOTE_MAP = {
     "VENEZIA": "Venezia", "NAZIONALE": "Nazionale"
 }
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-}
-
-def scarica_da_api():
-    """ Scarica l'ultima estrazione dall'API JSON diretta di Lottomatica/Mazinga """
-    url = "https://www.lottomatica.it/api/gdl/estrazioni/lotto/ultima"
+def scarica_da_estrazionedellotto():
+    url = "https://www.estrazionedellotto.it/"
+    
+    # Crea uno scraper capace di aggirare le protezioni anti-bot
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
+    
     try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            data_json = res.json()
+        response = scraper.get(url, timeout=15)
+        if response.status_code != 200:
+            print(f"Errore HTTP: {response.status_code}")
+            return None
             
-            # Estrazione della data (formato ISO o dd/MM/yyyy)
-            data_raw = data_json.get("dataEstrazione", "")
-            if "-" in data_raw:
-                dt = datetime.strptime(data_raw.split("T")[0], "%Y-%m-%d")
-                data_formatted = dt.strftime("%d/%m/%Y")
-            else:
-                data_formatted = data_raw
-
-            ruote_list = []
-            for item in data_json.get("estrazioniRuota", []):
-                nome_r = item.get("ruota", "").upper()
-                numeri = item.get("estratti", [])
-                
-                if nome_r in RUOTE_MAP and len(numeri) >= 5:
+        soup = BeautifulSoup(response.text, "html.parser")
+        text = soup.get_text()
+        
+        # Cerca la data nel formato gg/mm/aaaa (es. 07/08/2026)
+        match = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+        if not match:
+            print("Data dell'estrazione non trovata.")
+            return None
+            
+        data_estrazione = match.group(1)
+        ruote_list = []
+        
+        # Cerca le righe delle tabelle contenenti i numeri
+        for tr in soup.find_all("tr"):
+            cols = [td.get_text().strip() for td in tr.find_all(["td", "th"])]
+            if len(cols) >= 6:
+                nome_r = cols[0].upper()
+                if nome_r in RUOTE_MAP:
                     ruote_list.append({
                         "Ruota": RUOTE_MAP[nome_r],
-                        "N1": str(numeri[0]),
-                        "N2": str(numeri[1]),
-                        "N3": str(numeri[2]),
-                        "N4": str(numeri[3]),
-                        "N5": str(numeri[4])
+                        "N1": cols[1],
+                        "N2": cols[2],
+                        "N3": cols[3],
+                        "N4": cols[4],
+                        "N5": cols[5]
                     })
-
-            if len(ruote_list) >= 10:
-                print(f"Dati recuperati con successo via API JSON ({data_formatted})")
-                return {"Data": data_formatted, "Ruote": ruote_list}
-    except Exception as e:
-        print(f"Errore API Lottomatica: {e}")
-        
-    return None
-
-def scarica_fallback_html():
-    """ Backup su fonte secondaria se l'API principale è momentaneamente offline """
-    url = "https://www.lottoitalia.it/lotto/estrazioni"
-    try:
-        from bs4 import BeautifulSoup
-        import re
-        
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            text = soup.get_text()
+                    
+        if len(ruote_list) >= 10:
+            print(f"Estratti recuperati con successo per la data {data_estrazione}")
+            return {"Data": data_estrazione, "Ruote": ruote_list}
+        else:
+            print(f"Trovate solo {len(ruote_list)} ruote su 11.")
             
-            match = re.search(r"(\d{2}/\d{2}/\d{4})", text)
-            if match:
-                data_formatted = match.group(1)
-                ruote_list = []
-                
-                for tr in soup.find_all("tr"):
-                    cols = [td.get_text().strip() for td in tr.find_all(["td", "th"])]
-                    if len(cols) >= 6:
-                        nome_r = cols[0].upper()
-                        if nome_r in RUOTE_MAP:
-                            ruote_list.append({
-                                "Ruota": RUOTE_MAP[nome_r],
-                                "N1": cols[1], "N2": cols[2], "N3": cols[3], "N4": cols[4], "N5": cols[5]
-                            })
-                if len(ruote_list) >= 10:
-                    print(f"Dati recuperati da Fallback HTML ({data_formatted})")
-                    return {"Data": data_formatted, "Ruote": ruote_list}
     except Exception as e:
-        print(f"Errore Fallback HTML: {e}")
+        print(f"Errore durante lo scraping: {e}")
         
     return None
 
 def aggiorna_json():
-    # Prova l'API diretta, altrimenti passa al fallback
-    nuova_estrazione = scarica_da_api() or scarica_fallback_html()
+    nuova_estrazione = scarica_da_estrazionedellotto()
     
     if not nuova_estrazione:
-        print("CRITICO: Impossibile scaricare i dati da nessuna fonte.")
+        print("CRITICO: Impossibile scaricare i dati dal sito.")
         return
 
     try:
@@ -109,7 +88,7 @@ def aggiorna_json():
     else:
         ultima_data_salvata = ""
 
-    # Conteggio progressivo per l'anno
+    # Calcolo del numero di estrazione progressivo annuo
     anno_nuovo = datetime.strptime(nuova_estrazione["Data"], "%d/%m/%Y").year
     anno_ultimo = datetime.strptime(ultima_data_salvata, "%d/%m/%Y").year if ultima_data_salvata else 0
 
