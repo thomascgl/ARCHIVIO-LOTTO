@@ -3,7 +3,7 @@ name: Aggiornamento Automatico Estrazioni
 on:
   schedule:
     # Esegue TUTTI I GIORNI (* * *) alle 20:45 UTC (circa le 22:45 italiane in estate / 21:45 in inverno)
-    - cron: '45 20 * * *'
+   - cron: '30 20 * * *'
   
   # Ti permette di avviare l'aggiornamento a mano quando vuoi dalla scheda "Actions" di GitHub
   workflow_dispatch:
