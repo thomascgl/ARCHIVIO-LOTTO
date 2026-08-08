@@ -2,7 +2,7 @@ name: Aggiornamento Automatico Estrazioni
 
 on:
   schedule:
-    - cron: '33 20 * * *'
+    - cron: '03 18 * * *'
   
   # Ti permette di avviare l'aggiornamento a mano quando vuoi dalla scheda "Actions" di GitHub
   workflow_dispatch:
