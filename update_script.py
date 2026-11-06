@@ -45,7 +45,7 @@ def scarica_da_estrazionedellotto():
                     mesi = {
                         "gennaio": "01", "febbraio": "02", "marzo": "03", "aprile": "04",
                         "maggio": "05", "giugno": "06", "luglio": "07", "agosto": "08",
-                        "settembre": "09", "ottobre": "10", "novembere": "11", "dicembre": "12"
+                        "settembre": "09", "ottobre": "10", "novembre": "11", "dicembre": "12"
                     }
                     parti = match.group(1).lower().split()
                     giorno = parti[0].zfill(2)
